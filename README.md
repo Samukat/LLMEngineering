@@ -1,8 +1,6 @@
 # About our project
 Testing a methodology the paper ["Refusal in Language Models Is Mediated by a Single Direction"](https://arxiv.org/pdf/2406.11717) on the new [gpt-oss 20b](https://huggingface.co/openai/gpt-oss-20b) and [Qwen3-8B](https://huggingface.co/Qwen/Qwen3-8B) models.
 
-Tech used: Juptyer Notebooks run on GPUs rented via RunPod.
-
 # Results:
 Our project was succesful in identifying vectors which could be ablated from the activations to inhibit refusal and significantly increase the rate at which the model offered harmful information.
 
@@ -15,7 +13,9 @@ When given harmful prompts, our **altered Qwen 3 model** had a refusal rate of 0
 ![Qwen3 8b Results](Images/Qwen3%20Results%20Graph.png)
 
 # Guide to this repo:
-Our work is split across several Jupyter Notebooks:
+Our work is split across several Jupyter Notebooks. It can be replicated by working through them sequentially. 
+
+Please note that your machine will need to be able to handle batch LLM processing. We used a rented H100 GPU from [runpod.io](https://runpod.io) to execute this code. If you use this service, you may have to manually increase the amount of storage on your machine in order to download the models.
 
 ## 1. Computing Candidate Refusal Vectors
 In this notebook, we record the model's activations on harmful and harmless generations. 
