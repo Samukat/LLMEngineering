@@ -1,5 +1,6 @@
 # About our project
 Testing a methodology the paper "Refusal in Language Models Is Mediated by a Single Direction" on the new GPT-OSS 20B and Qwen3-8B models.
+
 Tech used: Juptyer Notebooks run on GPUs rented via RunPod.
 
 # Results:
