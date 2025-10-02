@@ -1,5 +1,5 @@
 # About our project
-Testing a methodology the paper ["Refusal in Language Models Is Mediated by a Single Direction"](https://arxiv.org/pdf/2406.11717) on the new [gpt-oss 20b](https://huggingface.co/openai/gpt-oss-20b) and [Qwen3-8B](https://huggingface.co/Qwen/Qwen3-8B) models.
+Testing the methodology from the paper ["Refusal in Language Models Is Mediated by a Single Direction"](https://arxiv.org/pdf/2406.11717) on the new [gpt-oss 20b](https://huggingface.co/openai/gpt-oss-20b) and [Qwen3-8B](https://huggingface.co/Qwen/Qwen3-8B) models.
 
 # Results:
 Our project was succesful in identifying vectors which could be ablated from the activations to inhibit refusal and significantly increase the rate at which the model offered harmful information.
