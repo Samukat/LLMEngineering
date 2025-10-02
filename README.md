@@ -13,7 +13,7 @@ When given harmful prompts, our **altered Qwen 3 model** had a refusal rate of 0
 ![Qwen3 8b Results](Images/Qwen3%20Results%20Graph.png)
 
 # Guide to this repo:
-Our work is split across several Jupyter Notebooks. It can be replicated by working through them sequentially. 
+Our work is split across several Jupyter Notebooks. It can be replicated by working through them sequentially. Packages are listed in requirements.txt.
 
 Please note that your machine will need to be able to handle batch LLM processing. We used a rented H100 GPU from [runpod.io](https://runpod.io) to execute this code. If you use this service, you may have to manually increase the amount of storage on your machine in order to download the models.
 
@@ -34,3 +34,6 @@ Here, we use a series of graphs to find the ideal refusal vector to ablate in th
 
 # Limitations and Next Steps:
 We hope to re-run these experiments with a higher sample size and longer outputs (particularly for the Qwen model). We will then capture our findings in a research paper. When completed, this paper will be added to the repo. 
+
+# Ethics Statement
+This work is for research purposes only. The methods here demonstrate risks in current LLM safety techniques and should not be used to deploy unsafe systems.
