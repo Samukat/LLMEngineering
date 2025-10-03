@@ -9,3 +9,4 @@ seaborn
 accelerate
 bitsandbytes
 scikit-learn
+hf_transfer
