@@ -8,8 +8,6 @@ from functools import partial
 import torch
 
 
-
-
 # Runs the model on a set of prompts and stores the activations
 def get_full_block_activations(model, tokenizer, insts, tokenizer_kwargs={}, gen_kwargs={"max_new_tokens": 4}):
     temp_hidden_state_dict = defaultdict(lambda: defaultdict(list))
