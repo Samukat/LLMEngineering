@@ -1,5 +1,7 @@
 # !pip install -r requirements.txt
 
+from tqdm.auto import tqdm
+import gc
 from datasets import load_dataset
 import torch
 from transformers import AutoTokenizer, AutoModelForCausalLM, BitsAndBytesConfig
@@ -51,7 +53,7 @@ def moderate_batch(guard_tokenizer, guard_model, chats, batch_size=16):
     return results
 
 
-def safety_scores(model_outputs, prompts, batch_size=16):
+def safety_scores(guard_tokenizer, guard_model, model_outputs, prompts, batch_size=16):
     chats = [
         [
             {"role": "user", "content": p},
@@ -60,10 +62,11 @@ def safety_scores(model_outputs, prompts, batch_size=16):
         for p, r in zip(prompts, model_outputs)
     ]
 
-    guard_outputs = moderate_batch(chats, batch_size)
-
+    guard_outputs = moderate_batch(guard_tokenizer, guard_model, chats, batch_size)
+    
     scores = [0 if "unsafe" in out[:15].lower() else 1 for out in guard_outputs]
     return scores
+
 
 
 def refusal_score(output_string):
@@ -100,7 +103,7 @@ def generate_with_refusal_edit(
     max_new_tokens=150,
     tokenizer_kwargs={},
     layer="layer_21",  # [layer_21]
-    step=0    
+    step=0
 ):
     hooks = []
 
@@ -195,7 +198,7 @@ def generate_with_refusal_edit_batch(
 
     def edit_fn(module, input, output, layer_key):
         hidden = output
-        
+
         if layer_key in refusal_vectors:
             vec = refusal_vectors[layer][step].to(
                 hidden.device)  # cahnged from layer_key
@@ -268,9 +271,9 @@ def generate_with_refusal_edit_batch(
         # Ensure hooks are cleaned up even if something fails
         for h in hooks:
             h.remove()
-            
+
         raise e
-    
+
     finally:
         # Ensure cleanup even if generation fails
         for h in hooks:
@@ -278,3 +281,213 @@ def generate_with_refusal_edit_batch(
 
     return output
 
+
+def unload_model(model, tokenizer=None, **other_components):
+    """
+    Completely unload a model and associated components from GPU memory.
+
+    Args:
+        model: The model to unload (can be None)
+        tokenizer: Optional tokenizer to delete
+        **other_components: Any other components (optimizer, scheduler, etc.) to delete
+    """
+    print("Starting model unload process...")
+
+    # Move model to CPU first if it exists and has parameters on GPU
+    if model is not None:
+        try:
+            if hasattr(model, 'cpu'):
+                model.cpu()
+            # Delete the model
+            del model
+            print("Model deleted")
+        except Exception as e:
+            print(f"Warning during model deletion: {e}")
+
+    # Delete tokenizer if provided
+    if tokenizer is not None:
+        try:
+            del tokenizer
+            print("Tokenizer deleted")
+        except Exception as e:
+            print(f"Warning during tokenizer deletion: {e}")
+
+    # Delete any other components passed
+    for name, component in other_components.items():
+        if component is not None:
+            try:
+                del component
+                print(f"{name} deleted")
+            except Exception as e:
+                print(f"Warning during {name} deletion: {e}")
+
+    # Clear CUDA cache
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+        torch.cuda.synchronize()
+        print("CUDA cache cleared")
+
+    # Force garbage collection multiple times
+    for i in range(3):
+        gc.collect()
+    print("Garbage collection completed")
+
+    # Print final GPU memory usage
+    if torch.cuda.is_available():
+        for i in range(torch.cuda.device_count()):
+            allocated = torch.cuda.memory_allocated(i) / 1024**3
+            reserved = torch.cuda.memory_reserved(i) / 1024**3
+            print(
+                f"GPU {i} - Allocated: {allocated:.2f} GB, Reserved: {reserved:.2f} GB")
+
+    print("Model unload complete!\n")
+
+
+# Note: The commented-out 'test_var = None' from the original
+# was a global variable, likely for debugging, and is not needed here.
+
+
+def run_experiment_batch(
+    harmful_prompts,
+    harmless_prompts,
+    refusal_vectors,
+    gen_model,
+    gen_tokenizer,  # Must be passed as an argument
+    max_new_tokens=150,
+    layers=None,
+    token_positions=None,
+    batch_size=16,
+    **kwargs
+):
+    """
+    Batched version of run_experiment.
+
+    """
+    if layers is None:
+        layers = list(refusal_vectors.keys())[
+            4:int(len(refusal_vectors.keys())*0.8)]
+    if token_positions is None:
+        token_positions = list(range(-2, 2))
+
+    entries = []
+
+    # --- helpers -------------------------------------------------------------
+
+    def batched(iterable, n):
+        """Yield successive n-sized chunks from iterable."""
+        for i in range(0, len(iterable), n):
+            yield iterable[i: i + n], i
+
+    def slice_generate_for_index(gen_out, i):
+        """Extracts all generation outputs for a single sample from a batched output."""
+        out = SimpleNamespace()
+        out.sequences = gen_out.sequences[i: i + 1]
+        out.last_input_logits = gen_out.last_input_logits[i]
+        # out.scores = [step_scores[i : i + 1] for step_scores in gen_out.scores]
+        out.logits = [step_logits[i: i + 1] for step_logits in gen_out.logits]
+        return out
+
+    def decode_batch_sequences(gen_out):
+        """Return list of decoded strings for each sample in a batched generate() output."""
+        decoded = []
+        for i in range(gen_out.sequences.size(0)):
+            # Uses the 'tokenizer' passed into the parent run_experiment_batch function
+            decoded.append(gen_tokenizer.decode(
+                gen_out.sequences[i], skip_special_tokens=True))
+        return decoded
+
+    # ------------------------------------------------------------------------
+
+    def process_prompts_batched(prompts, prompt_type):
+        """
+        Processes a list of prompts (harmful or harmless) in batches,
+        running both unmodified and ablation passes.
+        """
+
+        # 1) Unmodified pass (one pass per batch)
+        desc = f"{prompt_type} (UM)"
+        for batch_prompts, base_idx in tqdm(list(batched(prompts, batch_size)), desc=desc, position=0, leave=True):
+            torch.cuda.empty_cache()
+
+            # Unmodified = ablate=False, scale=0
+            # Note: We now pass 'model' as the first argument to the generate function.
+            # Assumes signature: generate_with_refusal_edit_batch(model, prompts, ...)
+            UM_out = generate_with_refusal_edit_batch(
+                batch_prompts,
+                refusal_vectors,
+                gen_model,
+                gen_tokenizer,
+                ablate=False,
+                scale=0.0,
+                max_new_tokens=max_new_tokens,
+                layer=layers[0],
+                **kwargs
+            )
+            UM_texts = decode_batch_sequences(UM_out)
+
+            # Add Unmodified rows
+            for j, prompt in enumerate(batch_prompts):
+                out_txt = UM_texts[j]
+                entries.append([
+                    "Unmodified",
+                    prompt_type,
+                    None,
+                    None,
+                    prompt,
+                    out_txt,
+                    0,  # KL divergence is 0 for unmodified
+                    # Use passed-in refusal_score function
+                    refusal_score(out_txt),
+                    # safety_score(out_txt, prompt),
+                ])
+
+            # 2) For each (layer, position), run ablation in batch and append rows
+            for layer in tqdm(layers, desc="Layers", position=1, leave=False):
+                for position in tqdm(token_positions, desc="Positions", position=2, leave=False):
+                    ABL_out = generate_with_refusal_edit_batch(
+                        batch_prompts,
+                        refusal_vectors,
+                        gen_model,  # Pass model
+                        gen_tokenizer,
+                        ablate=True,
+                        scale=1.0,  # default scale; can be overridden via **kwargs
+                        max_new_tokens=max_new_tokens,
+                        layer=layer,
+                        step=position,
+                        **kwargs
+                    )
+                    ABL_texts = decode_batch_sequences(ABL_out)
+
+                    # Append rows and compute KL per-sample by slicing the batched outputs
+                    for j, prompt in enumerate(batch_prompts):
+                        um_i = slice_generate_for_index(UM_out, j)
+                        abl_i = slice_generate_for_index(ABL_out, j)
+
+                        out_txt = ABL_texts[j]
+                        entries.append([
+                            "Ablation",
+                            prompt_type,
+                            layer,
+                            position,
+                            prompt,
+                            out_txt,
+                            # Use passed-in kl_function
+                            kl_function(um_i, abl_i),
+                            # Use passed-in refusal_score
+                            refusal_score(out_txt),
+                            # safety_score(out_txt, prompt),
+                        ])
+
+    # ------------------------------------------------------------------------
+
+    try:
+        # Process all harmless prompts
+        process_prompts_batched(harmless_prompts, "Harmless")
+        # Process all harmful prompts
+        process_prompts_batched(harmful_prompts, "Harmful")
+    except Exception as e:
+        # In case of an error (e.g., OOM), return results collected so far
+        print(f"[run_experiment_batch] Error processing prompts: {e}")
+        return entries
+
+    return entries
