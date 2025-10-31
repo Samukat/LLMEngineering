@@ -506,6 +506,8 @@ def run_experiment_batch(
     except Exception as e:
         # In case of an error (e.g., OOM), return results collected so far
         print(f"[run_experiment_batch] Error processing prompts: {e}")
+
+        raise e
         return entries
 
     return entries
