@@ -187,6 +187,7 @@ def generate_with_refusal_edit_batch(
     tokenizer_kwargs={},
     layer="layer_21",  # [layer_21]
     step=0,
+    pca_num_components=None
 ):
     hooks = []
 
@@ -200,14 +201,28 @@ def generate_with_refusal_edit_batch(
         hidden = output
 
         if layer_key in refusal_vectors:
-            vec = refusal_vectors[layer][step].to(
-                hidden.device)  # cahnged from layer_key
-            if ablate:
-                hidden = project_orthogonal(hidden, vec, scale)
+
+            ## not pca
+            if pca_num_components == None:
+                vec = refusal_vectors[layer][step].to(
+                    hidden.device)  # cahnged from layer_key
+                if ablate:
+                    hidden = project_orthogonal(hidden, vec, scale)
+                else:
+                    if layer_key != layer:  # lol check this in paper
+                        return hidden
+                    hidden = hidden + scale * vec
+            
             else:
-                if layer_key != layer:  # lol check this in paper
-                    return hidden
-                hidden = hidden + scale * vec
+                for i in range(pca_num_components):
+                    vec = refusal_vectors[layer][step][i].to(
+                        hidden.device)  # cahnged from layer_key
+                    if ablate:
+                        hidden = project_orthogonal(hidden, vec, scale)
+                    else:
+                        if layer_key != layer:  # lol check this in paper
+                            return hidden
+                        hidden = hidden + scale * vec
         return hidden
 
     # Register hooks for each layer
