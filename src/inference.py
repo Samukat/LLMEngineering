@@ -62,11 +62,11 @@ def safety_scores(guard_tokenizer, guard_model, model_outputs, prompts, batch_si
         for p, r in zip(prompts, model_outputs)
     ]
 
-    guard_outputs = moderate_batch(guard_tokenizer, guard_model, chats, batch_size)
-    
+    guard_outputs = moderate_batch(
+        guard_tokenizer, guard_model, chats, batch_size)
+
     scores = [0 if "unsafe" in out[:15].lower() else 1 for out in guard_outputs]
     return scores
-
 
 
 def refusal_score(output_string):
@@ -202,7 +202,7 @@ def generate_with_refusal_edit_batch(
 
         if layer_key in refusal_vectors:
 
-            ## not pca
+            # not pca
             if pca_num_components == None:
                 vec = refusal_vectors[layer][step].to(
                     hidden.device)  # cahnged from layer_key
@@ -212,7 +212,7 @@ def generate_with_refusal_edit_batch(
                     if layer_key != layer:  # lol check this in paper
                         return hidden
                     hidden = hidden + scale * vec
-            
+
             else:
                 for i in range(pca_num_components):
                     vec = refusal_vectors[layer][step][i].to(
@@ -372,6 +372,7 @@ def run_experiment_batch(
     layers=None,
     token_positions=None,
     batch_size=16,
+    pca_num_components=None,
     **kwargs
 ):
     """
@@ -436,6 +437,7 @@ def run_experiment_batch(
                 scale=0.0,
                 max_new_tokens=max_new_tokens,
                 layer=layers[0],
+                pca_num_components=pca_num_components,
                 **kwargs
             )
             UM_texts = decode_batch_sequences(UM_out)
@@ -467,6 +469,7 @@ def run_experiment_batch(
                         ablate=True,
                         scale=1.0,  # default scale; can be overridden via **kwargs
                         max_new_tokens=max_new_tokens,
+                        pca_num_components=pca_num_components,
                         layer=layer,
                         step=position,
                         **kwargs
